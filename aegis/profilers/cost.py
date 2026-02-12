@@ -12,8 +12,9 @@ def estimate_training_cost(spec: TrainingSpec) -> CostEstimate:
     """
     Deterministic cost estimation based on spec parameters.
 
-    Formula: (samples / batch_size * grad_accum * num_epochs) / throughput * gpu_price
-    Default throughput: 1000 samples/sec for 272M models (conservative)
+    Cost formula: (num_samples * num_epochs * 1.2 overhead) / throughput * gpu_price_per_sec
+    VRAM formula: base_model + optimizer_states + activation_memory
+    Assumes 10k samples and 1000 samples/sec throughput (conservative for 272M models).
     """
     # Assume 10k samples (small dataset for demo)
     num_samples = 10000
