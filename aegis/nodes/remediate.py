@@ -1,9 +1,35 @@
 from aegis.models.state import AegisState, TrainingSpec, RunEvent
 
 
+def _is_environment_error(error_lower: str) -> bool:
+    """Return True if the error is caused by missing packages or environment
+    issues that cannot be fixed by tweaking training parameters."""
+    env_markers = [
+        "modulenotfounderror",
+        "importerror",
+        "no module named",
+        "sentencepiece",
+        "tiktoken",
+        "you need to have sentencepiece",
+        "couldn't instantiate the backend tokenizer",
+        "valueerror: couldn't instantiate",
+        "protobuf",
+        "einops",
+    ]
+    return any(m in error_lower for m in env_markers)
+
+
 def remediate_spec(spec: TrainingSpec, error_message: str) -> TrainingSpec:
-    """Mutate TrainingSpec to fix common issues. Priority order (least invasive first)."""
+    """Mutate TrainingSpec to fix common issues. Priority order (least invasive first).
+
+    Returns the spec unchanged for environment/dependency errors that cannot
+    be fixed by parameter tweaking.
+    """
     error_lower = error_message.lower()
+
+    # 0. Environment / dependency errors — no parameter change will help
+    if _is_environment_error(error_lower):
+        return spec
 
     # 1. Out of memory -> shrink batch size
     if "out of memory" in error_lower or "cuda" in error_lower:
@@ -49,15 +75,23 @@ def remediate_spec_node(state: AegisState, error_message: str) -> AegisState:
     if new_spec.learning_rate != state.spec.learning_rate:
         changes.append(f"lr: {state.spec.learning_rate} -> {new_spec.learning_rate}")
 
-    change_desc = ", ".join(changes) if changes else "no changes"
+    is_env_err = _is_environment_error(error_message.lower())
+    if changes:
+        change_desc = ", ".join(changes)
+    elif is_env_err:
+        change_desc = "environment/dependency error (not fixable by parameter tuning)"
+    else:
+        change_desc = "no changes"
+
     event = RunEvent(
         phase="remediate_spec",
-        status="completed",
+        status="failed" if is_env_err else "completed",
         message=f"Applied remediation: {change_desc}",
         data={
             "error": error_message,
             "changes": changes,
             "new_spec": new_spec.model_dump(),
+            "is_environment_error": is_env_err,
         },
     )
 

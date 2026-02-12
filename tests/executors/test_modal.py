@@ -94,5 +94,46 @@ def test_parse_model_path_missing():
 def test_mock_result_has_required_keys():
     executor = ModalExecutor()
     result = executor._mock_execute("code", "{}")
-    required_keys = {"stdout", "stderr", "returncode", "metrics", "duration_sec", "model_path"}
+    required_keys = {"stdout", "stderr", "returncode", "metrics", "duration_sec", "model_path", "extracted_error"}
     assert required_keys.issubset(result.keys())
+
+
+# ---------------------------------------------------------------------------
+# Error extraction
+# ---------------------------------------------------------------------------
+
+def test_extract_error_with_traceback():
+    stderr = (
+        "WARNING: downloading files...\n"
+        "Traceback (most recent call last):\n"
+        '  File "train.py", line 10, in main\n'
+        "ValueError: sentencepiece not installed\n"
+    )
+    result = ModalExecutor._extract_error(stderr)
+    assert "Traceback" in result
+    assert "sentencepiece" in result
+    assert "WARNING" not in result
+
+
+def test_extract_error_multiple_tracebacks_takes_last():
+    stderr = (
+        "Traceback (most recent call last):\n"
+        "  first error\n"
+        "RuntimeError: first\n"
+        "\n"
+        "Traceback (most recent call last):\n"
+        "  second error\n"
+        "ValueError: second\n"
+    )
+    result = ModalExecutor._extract_error(stderr)
+    assert "second" in result
+    assert "first" not in result
+
+
+def test_extract_error_no_traceback():
+    result = ModalExecutor._extract_error("some random output with no traceback")
+    assert result == "some random output with no traceback"
+
+
+def test_extract_error_empty():
+    assert ModalExecutor._extract_error("") == ""

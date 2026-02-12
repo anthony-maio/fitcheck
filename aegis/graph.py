@@ -44,19 +44,28 @@ def execute_node(state: AegisState) -> AegisState:
     spec_json = state.spec.model_dump_json() if state.spec else "{}"
     raw = executor.execute(state.generated_code, spec_json)
 
+    extracted_error = raw.get("extracted_error", "")
+
     result = {
         "metrics": raw.get("metrics", {}),
         "model_path": raw.get("model_path"),
         "duration_sec": raw.get("duration_sec"),
         "stdout": raw.get("stdout", ""),
         "stderr": raw.get("stderr", ""),
+        "extracted_error": extracted_error,
     }
 
     if raw.get("returncode", -1) != 0:
+        # Use extracted error (the actual traceback) for the event message
+        err_summary = extracted_error or raw.get("stderr", "")
+        # Show the last line of the error (the actual exception) in the summary
+        err_lines = [l for l in err_summary.splitlines() if l.strip()]
+        short_err = err_lines[-1][:200] if err_lines else "Unknown error"
+
         event = RunEvent(
             phase="execute",
             status="failed",
-            message=f"Execution failed (rc={raw['returncode']}): {raw.get('stderr', '')[:200]}",
+            message=f"Execution failed (rc={raw['returncode']}): {short_err}",
             data=result,
         )
         return state.model_copy(
@@ -100,12 +109,18 @@ def _wrap_remediate(state: AegisState) -> AegisState:
     Extracts a meaningful error message from the most recent evaluation or
     execution result so that the remediation heuristic can act on it.
     Eval failures are checked first since they are the most common trigger.
+    Prefers ``extracted_error`` (the actual traceback) over raw stderr.
     """
     error_msg = "Generic training failure"
     if state.eval_result and state.eval_result.get("failures"):
         error_msg = "; ".join(state.eval_result["failures"])
-    elif state.execution_result and state.execution_result.get("stderr"):
-        error_msg = state.execution_result["stderr"]
+    elif state.execution_result:
+        # Prefer extracted traceback over full stderr
+        error_msg = (
+            state.execution_result.get("extracted_error")
+            or state.execution_result.get("stderr")
+            or error_msg
+        )
     return remediate_spec_node(state, error_message=error_msg)
 
 

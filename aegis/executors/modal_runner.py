@@ -29,6 +29,24 @@ class ModalExecutor:
     # ------------------------------------------------------------------
 
     @staticmethod
+    def _extract_error(stderr: str) -> str:
+        """Extract the final traceback + error from stderr.
+
+        HuggingFace often prints lengthy download warnings before the
+        actual Python traceback.  This pulls out the last traceback block
+        and error line so the user (and remediation) sees what matters.
+        """
+        if not stderr:
+            return ""
+        # Find the LAST "Traceback (most recent call last):" block
+        parts = stderr.split("Traceback (most recent call last):")
+        if len(parts) > 1:
+            tb = "Traceback (most recent call last):" + parts[-1]
+            return tb.strip()
+        # No traceback found — return the last 500 chars
+        return stderr[-500:].strip()
+
+    @staticmethod
     def _parse_metrics(stdout: str) -> dict:
         """Extract metrics from the ``AEGIS_METRICS:{...}`` sentinel line."""
         match = re.search(r"AEGIS_METRICS:(\{.*\})", stdout)
@@ -80,6 +98,7 @@ class ModalExecutor:
             "metrics": {"train_loss": 1.2, "eval_loss": 1.5},
             "duration_sec": 300,
             "model_path": "/tmp/mock_model",
+            "extracted_error": "",
         }
 
     def execute(self, script_code: str, spec_json: str, gpu: str | None = None) -> dict:
@@ -107,6 +126,8 @@ class ModalExecutor:
                 .pip_install(
                     "torch", "transformers", "peft", "datasets",
                     "accelerate", "bitsandbytes",
+                    "sentencepiece", "tiktoken", "protobuf",
+                    "einops", "scipy",
                 )
             )
 
@@ -164,6 +185,7 @@ class ModalExecutor:
                 "metrics": metrics,
                 "duration_sec": duration,
                 "model_path": model_path,
+                "extracted_error": self._extract_error(stderr),
             }
 
         except Exception as e:
@@ -174,4 +196,5 @@ class ModalExecutor:
                 "metrics": {},
                 "duration_sec": None,
                 "model_path": None,
+                "extracted_error": str(e),
             }

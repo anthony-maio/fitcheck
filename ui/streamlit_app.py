@@ -147,13 +147,50 @@ with st.sidebar:
     st.markdown("### GPU Cost Comparison")
     if state.get("cost_estimate"):
         ce = state["cost_estimate"]
-        duration_hr = ce.estimated_duration_min / 60
-        for gpu_name, rate in GPU_COSTS.items():
-            cost = rate * duration_hr
-            st.caption(f"{gpu_name}: ${cost:.4f}/run (${rate}/hr)")
+        # Base duration at the selected GPU's speed
+        selected_gpu = state.get("spec", {})
+        selected_gpu_name = getattr(selected_gpu, "target_gpu", "a10g").upper()
+        base_dur_min = ce.estimated_duration_min
+        # Find the speed of the selected GPU to normalize
+        selected_speed = 1.0
+        for gn, gs in GPU_SPECS.items():
+            if gn.lower().replace("-", "") == selected_gpu_name.lower().replace("-", ""):
+                selected_speed = gs["speed"]
+                break
+
+        best_cost = float("inf")
+        rows: list[dict] = []
+        for gpu_name, gs in GPU_SPECS.items():
+            # Duration scales inversely with relative speed
+            adj_dur_min = base_dur_min * (selected_speed / gs["speed"])
+            adj_dur_hr = adj_dur_min / 60
+            total_cost = gs["rate"] * adj_dur_hr
+            rows.append({
+                "name": gpu_name,
+                "rate": gs["rate"],
+                "speed": gs["speed"],
+                "dur_min": adj_dur_min,
+                "total": total_cost,
+            })
+            if total_cost < best_cost:
+                best_cost = total_cost
+
+        for r in rows:
+            tag = ""
+            if r["total"] <= best_cost * 1.01:
+                tag = " **Best value**"
+            elif r["total"] > best_cost * 2.5:
+                tag = " *Overpriced*"
+            st.caption(
+                f"{'**' if tag == ' **Best value**' else ''}"
+                f"{r['name']}: ${r['total']:.4f} "
+                f"({r['dur_min']:.0f}min, ${r['rate']}/hr)"
+                f"{'**' if tag == ' **Best value**' else ''}"
+                f"{tag}"
+            )
     else:
-        for gpu_name, rate in GPU_COSTS.items():
-            st.caption(f"{gpu_name}: ${rate}/hr")
+        for gpu_name, gs in GPU_SPECS.items():
+            st.caption(f"{gpu_name}: ${gs['rate']}/hr ({gs['speed']}x speed)")
 
     st.markdown("---")
 
@@ -411,12 +448,24 @@ if user_input:
                             f'{ev.data.get("activation_vram_gb", "?")} GB</span>'
                         )
                     if ev.phase == "execute" and ev.status == "failed":
-                        stderr = (ev.data.get("stderr") or "")[:300]
-                        if stderr:
+                        # Prefer extracted_error (the actual traceback)
+                        err_text = (
+                            ev.data.get("extracted_error")
+                            or ev.data.get("stderr")
+                            or ""
+                        )
+                        # Show last 600 chars of the actual error
+                        if err_text:
+                            err_display = err_text[-600:].replace("<", "&lt;").replace(">", "&gt;")
                             log_lines.append(
                                 f'<span style="color:#f87171;font-size:0.75rem">'
-                                f'     stderr: {stderr}</span>'
+                                f'     {err_display}</span>'
                             )
+                    if ev.phase == "remediate_spec" and ev.data and ev.data.get("is_environment_error"):
+                        log_lines.append(
+                            f'<span style="color:#fbbf24;font-size:0.75rem">'
+                            f'     This is an environment issue, not a training parameter problem.</span>'
+                        )
 
             # Progress bar: estimate based on happy path length, cap at 95% during loop
             happy_path_len = len(PHASE_ORDER)
