@@ -39,6 +39,9 @@ ENV/
 htmlcov/
 .tox/
 
+# Implementation plans (generated, not source of truth)
+docs/plans/2025-*
+
 # Aegis-ML specific
 *.db
 *.sqlite
