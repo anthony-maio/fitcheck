@@ -1,8 +1,8 @@
-# Aegis: Fine-Tuning Pre-Flight Engine
+# fitcheck -- know before you train
 
-> Design document for the Aegis reboot from LangGraph orchestration demo to
-> adoptable open-source tool.  Derived from collaborative brainstorming session
-> on 2026-02-13.
+> Design document for the project reboot from LangGraph orchestration demo
+> (aegis-ml) to adoptable open-source tool (fitcheck).  Derived from
+> collaborative brainstorming session on 2026-02-13.
 
 ---
 
@@ -32,7 +32,7 @@ setup and debugging.
 
 ## 2. Product Definition
 
-**Aegis is a fine-tuning pre-flight engine.**  Given a model, a training
+**fitcheck is a fine-tuning pre-flight engine.**  Given a model, a training
 method, a dataset, and target hardware, it computes a detailed, architecture-
 aware prediction of VRAM usage, optimal batch configuration, estimated cost and
 duration, the most likely failure modes, and pre-computed fallback
@@ -41,7 +41,7 @@ configurations.
 When you also let it run the training, it uses that same pre-computed knowledge
 to auto-recover from failures without guessing.
 
-**What it is not.**  Aegis is not a training framework.  It does not replace
+**What it is not.**  fitcheck is not a training framework.  It does not replace
 Axolotl, Unsloth, or HuggingFace Trainer.  It sits *in front of* them --
 telling you what to configure and whether it's worth running.  Think of it as
 the flight plan, not the autopilot.
@@ -53,9 +53,17 @@ what will happen when you combine *this model* with *this hardware* with *this
 method*."  People do that math in their heads, in spreadsheets, or by trial and
 error.
 
+### Why "fitcheck"
+
+`pip install fitcheck`, `import fitcheck`, `fitcheck plan` -- same word
+everywhere.  No dash ambiguity, no import/package mismatch.  Works as a verb:
+"Did you fitcheck that config?"  "Fitcheck says it won't fit on a 3090."  The
+name scales beyond VRAM estimation if the tool grows to cover training dynamics,
+data quality, cost optimization.
+
 ### Adoption vector
 
-The CLI report output is the product.  When someone pastes the `aegis plan`
+The CLI report output is the product.  When someone pastes the `fitcheck plan`
 output in a Discord channel, people ask "what tool is this?"  That's the
 adoption path.
 
@@ -95,8 +103,8 @@ estimates can be off by 30-40% for chat-format data due to template overhead.
 
 ### Delivery
 
-- **Python library** -- `from aegis import plan`
-- **CLI** -- `aegis plan`, `aegis run`, `aegis benchmark`
+- **Python library** -- `from fitcheck import plan`
+- **CLI** -- `fitcheck plan`, `fitcheck run`, `fitcheck benchmark`
 - **LangGraph orchestrator** -- opt-in execution layer on top of the planner
 
 ### v1 cut list
@@ -151,10 +159,10 @@ The report shows this breakdown explicitly.  Showing the work builds trust.
 Includes cloud GPU pricing for counterfactual cost display (Modal, RunPod,
 Lambda Labs).
 
-Supports optional per-user calibration via `aegis benchmark` (runs 10 training
-steps, measures actual throughput).  First run is estimated; subsequent runs on
-the same hardware use measured data.  This is a retention loop -- the more you
-use the tool, the more accurate it gets.
+Supports optional per-user calibration via `fitcheck benchmark` (runs 10
+training steps, measures actual throughput).  First run is estimated; subsequent
+runs on the same hardware use measured data.  This is a retention loop -- the
+more you use the tool, the more accurate it gets.
 
 ### Stage 4: VRAM Computation Engine
 
@@ -305,7 +313,7 @@ The report includes:
 - **Fallback configs** with VRAM for each tier
 
 Throughput estimates carry an explicit asterisk in v1.  For precise throughput,
-`aegis benchmark` runs 10 calibration steps and stores measured tok/sec per
+`fitcheck benchmark` runs 10 calibration steps and stores measured tok/sec per
 hardware + method combination.
 
 ---
@@ -313,13 +321,13 @@ hardware + method combination.
 ## 5. CLI Interface
 
 ```
-aegis plan "qlora llama-3.1-8b on 3090 with ./data/support.jsonl"
-aegis plan --model meta-llama/Llama-3.1-8B --method qlora --gpu 3090 --dataset ./data/support.jsonl
-aegis benchmark --gpu 3090 --method qlora --model meta-llama/Llama-3.1-8B
-aegis run [options]   # execute with auto-recovery from fallback chain
+fitcheck plan "qlora llama-3.1-8b on 3090 with ./data/support.jsonl"
+fitcheck plan --model meta-llama/Llama-3.1-8B --method qlora --gpu 3090 --dataset ./data/support.jsonl
+fitcheck benchmark --gpu 3090 --method qlora --model meta-llama/Llama-3.1-8B
+fitcheck run [options]   # execute with auto-recovery from fallback chain
 ```
 
-Natural language parsing in `aegis plan "..."` extracts model ID, method,
+Natural language parsing in `fitcheck plan "..."` extracts model ID, method,
 hardware, and dataset path.  Structured flags are the fallback for precision.
 
 ---
@@ -327,7 +335,7 @@ hardware, and dataset path.  Structured flags are the fallback for precision.
 ## 6. Example Report Output
 
 ```
-$ aegis plan "qlora llama-3.1-8b on 3090 with ./data/support.jsonl"
+$ fitcheck plan "qlora llama-3.1-8b on 3090 with ./data/support.jsonl"
 
 Model: meta-llama/Llama-3.1-8B
   Architecture: LlamaForCausalLM (dense decoder)
@@ -375,7 +383,7 @@ Aggressive Config (max throughput, <1 GB headroom):
   Appropriate for local hardware where restart is cheap
 
 Estimates:
-  Throughput: ~1,500 - 2,200 tok/sec (estimated, run `aegis benchmark` to calibrate)
+  Throughput: ~1,500 - 2,200 tok/sec (estimated, run `fitcheck benchmark` to calibrate)
   Time: 3 epochs ~ 35-50 min
   Cost: $0.00 (local) -- equivalent cloud: ~$0.85 A10G, ~$2.40 A100
 
@@ -396,9 +404,9 @@ Fallbacks (pre-computed, if primary OOMs):
 ## 7. Module Structure
 
 ```
-aegis/
+fitcheck/
 |-- models/
-|   |-- state.py              # AegisState (updated with new fields)
+|   |-- state.py              # FitcheckState (graph state, updated fields)
 |   |-- profiles.py           # ModelProfile, DatasetProfile, HardwareSpec
 |   +-- results.py            # VRAMBreakdown, SolverResult, PlanReport
 |
@@ -417,7 +425,7 @@ aegis/
 |-- hardware/
 |   |-- registry.py           # Static GPU specs + overhead margins
 |   |-- pricing.py            # Cloud GPU pricing (Modal, RunPod, Lambda)
-|   +-- calibration.py        # aegis benchmark result store
+|   +-- calibration.py        # fitcheck benchmark result store
 |
 |-- datasets/
 |   +-- analyzer.py           # Sample, tokenize, compute seq_len stats
@@ -428,7 +436,7 @@ aegis/
 |-- report/
 |   +-- formatter.py          # CLI report renderer
 |
-|-- cli.py                    # aegis plan / run / benchmark
+|-- cli.py                    # fitcheck plan / run / benchmark
 |
 |-- nodes/                    # LangGraph nodes (slimmed, consume solver output)
 |-- edges/                    # LangGraph edges (simplified)
@@ -440,7 +448,7 @@ aegis/
 ### Key interfaces
 
 ```python
-# aegis/profilers/vram/families/base.py
+# fitcheck/profilers/vram/families/base.py
 class ArchitectureFamily(Protocol):
     """Each family knows how to compute VRAM for its architecture."""
 
@@ -466,7 +474,7 @@ class ArchitectureFamily(Protocol):
 ```
 
 ```python
-# aegis/profilers/vram/components.py
+# fitcheck/profilers/vram/components.py
 def weight_memory(
     total_params: int, method: Method, dtype: DType,
     lora_rank: int = 0, lora_targets: int = 0,
@@ -482,7 +490,7 @@ def gradient_memory(
 ```
 
 ```python
-# aegis/profilers/vram/engine.py
+# fitcheck/profilers/vram/engine.py
 class VRAMEstimator:
     """Orchestrates all components into a full VRAM breakdown."""
 
@@ -498,7 +506,7 @@ class VRAMEstimator:
 ```
 
 ```python
-# aegis/profilers/solver.py
+# fitcheck/profilers/solver.py
 class ConfigSolver:
     """Finds optimal config given constraints.  Produces three tiers."""
 
@@ -522,26 +530,31 @@ class ConfigSolver:
 
 ## 8. Codebase Migration
 
-### What stays
-- `AegisState` and the Pydantic model pattern -- solid foundation, needs new fields
+The project transitions from `aegis-ml` (aegis/) to `fitcheck` (fitcheck/).
+
+### What stays (pattern-level)
+- Pydantic state model pattern -- solid foundation, needs new fields and rename
 - The graph topology concept -- parse -> plan -> gate -> execute -> eval -> report
 - The test structure and TDD discipline
 - Jinja2 template approach for code generation (templates consume solver output)
 
 ### What gets rewritten
-- `aegis/profilers/cost.py` -- becomes the entire VRAM computation engine
-- `aegis/nodes/intent.py` -- parses model IDs, hardware specs, dataset paths
-- `aegis/nodes/remediate.py` -- pops next config from pre-computed fallback chain
+- `aegis/profilers/cost.py` -> `fitcheck/profilers/vram/` -- the entire VRAM
+  computation engine
+- `aegis/nodes/intent.py` -> `fitcheck/nodes/intent.py` -- parses model IDs,
+  hardware specs, dataset paths
+- `aegis/nodes/remediate.py` -> `fitcheck/nodes/remediate.py` -- pops next
+  config from pre-computed fallback chain instead of heuristic batch halving
 
 ### What's new
-- `aegis/profilers/vram/` -- architecture family registry, component calculators, engine
-- `aegis/hardware/` -- GPU registry, pricing, calibration
-- `aegis/datasets/` -- dataset sampling and analysis
-- `aegis/hub/` -- HuggingFace Hub integration
-- `aegis/report/` -- CLI report formatter
-- `aegis/cli.py` -- Typer/Click CLI
-- `aegis/profilers/solver.py` -- config optimization
-- `aegis/profilers/sanity.py` -- training dynamics sanity checker
+- `fitcheck/profilers/vram/` -- architecture family registry, component calculators, engine
+- `fitcheck/hardware/` -- GPU registry, pricing, calibration
+- `fitcheck/datasets/` -- dataset sampling and analysis
+- `fitcheck/hub/` -- HuggingFace Hub integration
+- `fitcheck/report/` -- CLI report formatter
+- `fitcheck/cli.py` -- Typer/Click CLI
+- `fitcheck/profilers/solver.py` -- config optimization
+- `fitcheck/profilers/sanity.py` -- training dynamics sanity checker
 
 ### What gets demoted
 - Streamlit UI -- still useful but not the adoption path.  CLI first, web later
@@ -583,7 +596,7 @@ def test_parameter_count_matches_reality(model_id):
 ```
 
 ### Integration tests
-- End-to-end `aegis plan` CLI invocation produces valid report
+- End-to-end `fitcheck plan` CLI invocation produces valid report
 - Solver fallback chain entries all fit within stated VRAM budgets
 - Report reasoning annotations are present and non-empty
 
@@ -604,9 +617,9 @@ def test_parameter_count_matches_reality(model_id):
 - `ConfigSolver` with batch-size sweep and fallback chain
 - `HardwareSpec` registry with measured overheads
 - `DatasetAnalyzer` with format detection and seq_len stats
-- `aegis plan` CLI command with report formatter
-- **Exit criterion:** `aegis plan "qlora llama-3.1-8b on 3090"` produces the
-  full report output shown in this document
+- `fitcheck plan` CLI command with report formatter
+- **Exit criterion:** `fitcheck plan "qlora llama-3.1-8b on 3090"` produces
+  the full report output shown in this document
 
 ### Week 3: Breadth and polish
 - `GemmaFamily` and `MoEFamily` implementations
@@ -620,20 +633,19 @@ def test_parameter_count_matches_reality(model_id):
 ### Week 4: Integration
 - Rewire LangGraph nodes to consume solver output
 - `remediate_spec` uses pre-computed fallback chain
-- Wire `aegis run` to local executor
-- `aegis benchmark` calibration step
+- Wire `fitcheck run` to local executor
+- `fitcheck benchmark` calibration step
 - Update Streamlit UI to display new report format
-- **Exit criterion:** full `aegis plan` -> `aegis run` workflow with auto-
-  recovery from a simulated OOM
+- **Exit criterion:** full `fitcheck plan` -> `fitcheck run` workflow with
+  auto-recovery from a simulated OOM
 
 ---
 
 ## 11. Open Questions
 
-### Package name
-`aegis` is taken on PyPI (v1.1.1).  `aegis-ml` is available.  The CLI command
-can still be `aegis` regardless of package name.  Decision: use `aegis-ml` on
-PyPI, `aegis` as the CLI entry point.  Revisit if there's a naming conflict.
+### Package name (RESOLVED)
+PyPI package: `fitcheck`.  CLI command: `fitcheck`.  Python import: `fitcheck`.
+Same word everywhere.
 
 ### Multi-dimensional solver
 The v1 solver fixes method + LoRA rank and sweeps batch size.  A richer solver
@@ -649,7 +661,7 @@ override supports this in v1.1.  For v1, all weights are assumed to be on GPU.
 ### Throughput estimation
 VRAM is computable from first principles.  Throughput is not -- it depends on
 memory bandwidth, kernel implementations, flash attention, quantization backend,
-data loading.  v1 provides a range estimate.  `aegis benchmark` provides
+data loading.  v1 provides a range estimate.  `fitcheck benchmark` provides
 calibrated measurements.  Do not fake precision.
 
 ---
@@ -658,8 +670,8 @@ calibrated measurements.  Do not fake precision.
 
 The tool is successful when:
 
-1. A user can run `aegis plan` and get a VRAM prediction within 10% of actual
-   measured usage for any supported model + method + hardware combination
+1. A user can run `fitcheck plan` and get a VRAM prediction within 10% of
+   actual measured usage for any supported model + method + hardware combination
 2. The report output is clear enough that someone unfamiliar with the tool
    understands every number and recommendation
 3. The MoE case produces predictions that are meaningfully more accurate than
