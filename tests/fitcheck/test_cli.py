@@ -54,7 +54,7 @@ class TestCLIParsing:
                 app, ["plan", "--model", "test", "--method", "banana", "--gpu", "3090"]
             )
         assert result.exit_code != 0
-        assert "unknown method" in result.output.lower() or result.exit_code != 0
+        assert "unknown method" in result.output.lower()
 
     def test_unknown_gpu(self):
         with patch("fitcheck.cli.resolve_model", return_value=_mock_llama_8b()):

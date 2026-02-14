@@ -25,6 +25,7 @@ from fitcheck.profilers.vram.engine import VRAMEstimator
 # Headroom fraction for the "recommended" config.
 # We want range_high_gb to leave at least this much of usable VRAM free.
 _RECOMMENDED_HEADROOM = 0.15
+RECOMMENDED_HEADROOM_PCT = _RECOMMENDED_HEADROOM * 100  # public, used by formatter
 
 # Default optimizer per method — QLoRA/LoRA use paged 8-bit Adam,
 # full fine-tune uses standard AdamW.
@@ -61,6 +62,12 @@ class ConfigSolver:
         opt = optimizer or _DEFAULT_OPTIMIZERS[method]
         lora_cfg = lora_config or LoRAConfig()
         usable_gb = hardware.usable_vram_gb
+
+        if usable_gb <= 0:
+            raise ValueError(
+                f"Hardware '{hardware.name}' has no usable VRAM "
+                f"(total={hardware.total_vram_gb} GB, overhead={hardware.overhead_gb} GB)"
+            )
 
         # Step 1: Can we fit at all with bs=1, no grad checkpointing?
         bs1_breakdown = self._estimate(
@@ -109,7 +116,7 @@ class ConfigSolver:
                     bs1_breakdown,
                 )
 
-        # Step 2: Find max batch size via doubling then binary refinement
+        # Step 2: Find max batch size via doubling
         max_recommended_bs = self._find_max_batch(
             model,
             hardware,
@@ -122,6 +129,37 @@ class ConfigSolver:
             eval_seq_len,
             headroom=_RECOMMENDED_HEADROOM,
         )
+
+        # If bs=1 doesn't meet headroom target, try grad checkpointing
+        if max_recommended_bs == 1 and not grad_ckpt_needed:
+            bs1_with_ckpt = self._estimate(
+                model,
+                hardware,
+                method,
+                1,
+                seq_len,
+                lora_cfg,
+                opt,
+                grad_checkpointing=True,
+                training_dtype=training_dtype,
+                eval_seq_len=eval_seq_len,
+            )
+            threshold = usable_gb * (1 - _RECOMMENDED_HEADROOM)
+            if bs1_with_ckpt.range_high_gb <= threshold:
+                grad_ckpt_needed = True
+                max_recommended_bs = self._find_max_batch(
+                    model,
+                    hardware,
+                    method,
+                    seq_len,
+                    lora_cfg,
+                    opt,
+                    True,
+                    training_dtype,
+                    eval_seq_len,
+                    headroom=_RECOMMENDED_HEADROOM,
+                )
+
         max_aggressive_bs = self._find_max_batch(
             model,
             hardware,
@@ -232,6 +270,48 @@ class ConfigSolver:
             fallbacks=fallbacks,
             warnings=warnings,
         )
+
+    def estimate_fixed(
+        self,
+        model: ModelProfile,
+        hardware: HardwareSpec,
+        method: TrainingMethod,
+        batch_size: int,
+        seq_len: int = 512,
+        lora_config: LoRAConfig | None = None,
+        optimizer: str | None = None,
+        target_effective_batch: int = 16,
+        training_dtype: str = "bfloat16",
+        eval_seq_len: int | None = None,
+    ) -> SolverResult:
+        """Estimate VRAM for a fixed batch size without running the solver search."""
+        opt = optimizer or _DEFAULT_OPTIMIZERS[method]
+        lora_cfg = lora_config or LoRAConfig()
+
+        breakdown = self._estimate(
+            model,
+            hardware,
+            method,
+            batch_size,
+            seq_len,
+            lora_cfg,
+            opt,
+            grad_checkpointing=False,
+            training_dtype=training_dtype,
+            eval_seq_len=eval_seq_len,
+        )
+        accum = _grad_accum_steps(batch_size, target_effective_batch)
+        config = TrainingConfig(
+            micro_batch_size=batch_size,
+            gradient_accumulation_steps=accum,
+            effective_batch_size=batch_size * accum,
+            seq_len=seq_len,
+            optimizer=opt,
+            lora_rank=lora_cfg.rank if method != TrainingMethod.FULL else None,
+            lora_targets=(lora_cfg.target_modules if method != TrainingMethod.FULL else None),
+            vram_breakdown=breakdown,
+        )
+        return SolverResult(recommended=config)
 
     def _estimate(
         self,
@@ -518,7 +598,7 @@ class ConfigSolver:
             )
 
         if grad_ckpt_needed:
-            warnings.append("Gradient checkpointing required — expect ~30% slower training.")
+            warnings.append("Gradient checkpointing required -- expect ~30% slower training.")
 
         if eval_seq_len is not None and breakdown.eval_kv_spike is not None:
             spike_gb = breakdown.eval_kv_spike.gb

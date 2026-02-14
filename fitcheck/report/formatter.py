@@ -15,31 +15,25 @@ from rich.table import Table
 from rich.text import Text
 
 from fitcheck.models.results import PlanReport, TrainingConfig
+from fitcheck.solver import RECOMMENDED_HEADROOM_PCT
 
 
 def format_report(report: PlanReport, *, width: int | None = None) -> str:
     """Render a PlanReport to a string of Rich-formatted terminal output."""
     buf = StringIO()
     console = Console(file=buf, width=width or 90, force_terminal=True)
-
-    _render_header(console, report)
-    _render_model_summary(console, report)
-    _render_dataset_summary(console, report)
-    _render_hardware_summary(console, report)
-    _render_training_summary(console, report)
-    _render_vram_breakdown(console, report)
-    _render_recommended_config(console, report)
-    _render_aggressive_config(console, report)
-    _render_risks(console, report)
-    _render_fallbacks(console, report)
-
+    _render_all(console, report)
     return buf.getvalue()
 
 
 def print_report(report: PlanReport) -> None:
     """Render and print a PlanReport directly to the terminal."""
     console = Console(width=90)
+    _render_all(console, report)
 
+
+def _render_all(console: Console, report: PlanReport) -> None:
+    """Render all report sections to a console."""
     _render_header(console, report)
     _render_model_summary(console, report)
     _render_dataset_summary(console, report)
@@ -163,7 +157,7 @@ def _render_vram_breakdown(console: Console, report: PlanReport) -> None:
     table.add_row(
         Text("Range", style="bold"),
         Text(
-            f"{breakdown.range_low_gb:.2f}–{breakdown.range_high_gb:.2f} GB",
+            f"{breakdown.range_low_gb:.2f}-{breakdown.range_high_gb:.2f} GB",
             style="bold",
         ),
         "",
@@ -172,7 +166,7 @@ def _render_vram_breakdown(console: Console, report: PlanReport) -> None:
     # Headroom
     headroom_gb = report.usable_vram_gb - breakdown.range_high_gb
     headroom_pct = headroom_gb / report.usable_vram_gb * 100
-    if headroom_pct >= 15:
+    if headroom_pct >= RECOMMENDED_HEADROOM_PCT:
         style = "green"
     elif headroom_pct >= 5:
         style = "yellow"
@@ -226,7 +220,7 @@ def _render_aggressive_config(console: Console, report: PlanReport) -> None:
 
     console.print(Text("Aggressive Config", style="bold yellow"))
     console.print(
-        Text("  Tighter fit — may OOM on longer sequences", style="dim yellow"),
+        Text("  Tighter fit -- may OOM on longer sequences", style="dim yellow"),
     )
     _render_config_table(console, agg)
     console.print()
@@ -249,7 +243,7 @@ def _render_config_table(console: Console, config: TrainingConfig) -> None:
         bd = config.vram_breakdown
         table.add_row(
             "VRAM",
-            f"{bd.range_low_gb:.1f}–{bd.range_high_gb:.1f} GB",
+            f"{bd.range_low_gb:.1f}-{bd.range_high_gb:.1f} GB",
         )
 
     console.print(table)

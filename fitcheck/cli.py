@@ -1,4 +1,4 @@
-"""fitcheck CLI — know before you train.
+"""fitcheck CLI -- know before you train.
 
 Typer-based command-line interface. Entry point: `fitcheck plan`.
 """
@@ -19,7 +19,7 @@ from fitcheck.solver import ConfigSolver
 
 app = typer.Typer(
     name="fitcheck",
-    help="Know before you train — VRAM estimation for LLM fine-tuning.",
+    help="Know before you train -- VRAM estimation for LLM fine-tuning.",
     add_completion=False,
     no_args_is_help=True,
 )
@@ -27,7 +27,7 @@ app = typer.Typer(
 
 @app.callback()
 def main() -> None:
-    """fitcheck — know before you train."""
+    """fitcheck -- know before you train."""
 
 
 @app.command()
@@ -76,39 +76,15 @@ def plan(
     solver = ConfigSolver()
 
     if batch_size is not None:
-        # Fixed batch mode: skip solver search, just estimate
-        from fitcheck.profilers.vram.engine import VRAMEstimator
-
-        estimator = VRAMEstimator()
-        optimizer = "paged_adamw_8bit" if training_method != TrainingMethod.FULL else "adamw"
-        breakdown = estimator.estimate(
+        solver_result = solver.estimate_fixed(
             model=model_profile,
             hardware=hardware,
             method=training_method,
             batch_size=batch_size,
             seq_len=seq_len,
             lora_config=lora_config,
-            optimizer=optimizer,
-            training_dtype="bfloat16",
             eval_seq_len=eval_seq_len,
         )
-        from fitcheck.models.results import TrainingConfig, SolverResult
-        import math
-
-        accum = max(1, math.ceil(16 / batch_size))
-        config = TrainingConfig(
-            micro_batch_size=batch_size,
-            gradient_accumulation_steps=accum,
-            effective_batch_size=batch_size * accum,
-            seq_len=seq_len,
-            optimizer=optimizer,
-            lora_rank=lora_rank if training_method != TrainingMethod.FULL else None,
-            lora_targets=(
-                lora_config.target_modules if training_method != TrainingMethod.FULL else None
-            ),
-            vram_breakdown=breakdown,
-        )
-        solver_result = SolverResult(recommended=config)
     else:
         solver_result = solver.solve(
             model=model_profile,

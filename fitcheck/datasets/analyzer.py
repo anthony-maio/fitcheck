@@ -153,8 +153,8 @@ def _compute_stats(token_counts: list[int]) -> SeqLenStats:
     return SeqLenStats(
         min=token_counts[0],
         mean=statistics.mean(token_counts),
-        p50=token_counts[n // 2],
-        p95=token_counts[int(n * 0.95)],
+        p50=token_counts[min(int(n * 0.50), n - 1)],
+        p95=token_counts[min(int(n * 0.95), n - 1)],
         p99=token_counts[min(int(n * 0.99), n - 1)],
         max=token_counts[-1],
     )

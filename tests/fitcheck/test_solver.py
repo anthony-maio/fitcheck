@@ -148,6 +148,42 @@ class TestFullFineTuneOnRTX3090:
         assert result.recommended.optimizer == "adamw"
 
 
+class TestLoRA8BOnRTX3090:
+    """LoRA (not QLoRA) uses bf16 base weights -- tighter fit than QLoRA."""
+
+    def test_lora_uses_8bit_optimizer(self):
+        """LoRA should default to paged_adamw_8bit like QLoRA."""
+        solver = ConfigSolver()
+        result = solver.solve(
+            model=_make_llama_8b(),
+            hardware=_make_3090(),
+            method=TrainingMethod.LORA,
+            seq_len=512,
+        )
+        assert result.recommended.optimizer == "paged_adamw_8bit"
+
+    def test_lora_uses_more_vram_than_qlora(self):
+        """LoRA keeps base weights in bf16, QLoRA quantizes to NF4."""
+        solver = ConfigSolver()
+        lora_result = solver.solve(
+            model=_make_llama_8b(),
+            hardware=_make_3090(),
+            method=TrainingMethod.LORA,
+            seq_len=512,
+        )
+        qlora_result = solver.solve(
+            model=_make_llama_8b(),
+            hardware=_make_3090(),
+            method=TrainingMethod.QLORA,
+            seq_len=512,
+        )
+        lora_vram = lora_result.recommended.vram_breakdown.steady_state_gb
+        qlora_vram = qlora_result.recommended.vram_breakdown.steady_state_gb
+        assert lora_vram > qlora_vram, (
+            f"LoRA ({lora_vram:.1f} GB) should use more VRAM than QLoRA ({qlora_vram:.1f} GB)"
+        )
+
+
 class TestQLoRA8BOnH100:
     """Same model on much bigger GPU — should get larger batch sizes."""
 
