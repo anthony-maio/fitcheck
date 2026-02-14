@@ -16,13 +16,15 @@ from fitcheck.models.profiles import (
 from fitcheck.models.results import VRAMBreakdown
 from fitcheck.profilers.vram import components
 from fitcheck.profilers.vram.families.base import ArchitectureFamily
+from fitcheck.profilers.vram.families.gemma import GemmaFamily
 from fitcheck.profilers.vram.families.llama import LlamaFamily
+from fitcheck.profilers.vram.families.moe import MoEFamily
 
 # Family registry: maps family identifier to implementation
 _FAMILIES: dict[str, ArchitectureFamily] = {
     "llama": LlamaFamily(),
-    # "gemma": GemmaFamily(),   # Week 3
-    # "moe": MoEFamily(),       # Week 3
+    "gemma": GemmaFamily(),
+    "moe": MoEFamily(),
 }
 
 

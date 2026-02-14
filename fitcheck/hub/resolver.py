@@ -118,6 +118,9 @@ def _config_to_profile(model_id: str, config: dict[str, Any]) -> ModelProfile:
         config.get("num_experts_per_token"),
     )
 
+    # Sliding window (Gemma 2: alternating layers use sliding window attention)
+    sliding_window = config.get("sliding_window")
+
     # Compute total parameter count
     total_params = _compute_param_count(
         hidden_size=hidden_size,
@@ -147,6 +150,7 @@ def _config_to_profile(model_id: str, config: dict[str, Any]) -> ModelProfile:
         num_experts_per_token=experts_per_token,
         max_position_embeddings=max_pos,
         torch_dtype=torch_dtype,
+        sliding_window=sliding_window,
     )
 
 

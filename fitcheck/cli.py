@@ -99,6 +99,8 @@ def plan(
     trainable = get_trainable_params(model_profile, training_method, lora_config)
     trainable_pct = (trainable / model_profile.total_params) * 100
 
+    # TODO: integrate sanity checker via --dataset flag (fitcheck.profilers.sanity)
+
     # Assemble report
     report = PlanReport(
         model_id=model_profile.model_id,

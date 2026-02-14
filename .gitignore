@@ -3,6 +3,8 @@
 .claude/
 nul
 .mypy_cache/
+CLAUDE.md
+docs/plans/
 
 # Python
 __pycache__/

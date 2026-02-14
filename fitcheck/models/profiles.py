@@ -69,6 +69,7 @@ class ModelProfile(BaseModel):
     # Metadata
     max_position_embeddings: int = 4096
     torch_dtype: str = "bfloat16"
+    sliding_window: int | None = None  # Gemma 2: alternating layers use sliding window
 
     @property
     def is_moe(self) -> bool:
@@ -81,13 +82,14 @@ class ModelProfile(BaseModel):
     @property
     def active_params(self) -> int:
         """Parameters active per forward pass.  Equals total_params for dense
-        models.  For MoE, excludes inactive expert parameters."""
-        if not self.is_moe or self.num_experts_per_token is None:
+        models.  For MoE, excludes inactive expert MLP parameters."""
+        if not self.is_moe or self.num_experts_per_token is None or self.num_experts is None:
             return self.total_params
-        # Rough: non-expert params + (experts_per_token / num_experts) * expert_params
-        # Expert params ~ (num_experts * 2 * hidden * intermediate) for gate+up+down
-        # This is approximate; family class computes precisely
-        return self.total_params  # family overrides for precise calculation
+        # gate + up + down projections, no bias (standard for modern SwiGLU MoE)
+        mlp_per_expert = 3 * self.hidden_size * self.intermediate_size
+        inactive_experts = self.num_experts - self.num_experts_per_token
+        inactive_mlp_params = inactive_experts * mlp_per_expert * self.num_layers
+        return self.total_params - inactive_mlp_params
 
 
 class SeqLenStats(BaseModel):

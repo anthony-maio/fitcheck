@@ -14,6 +14,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from fitcheck.hardware.pricing import get_cloud_prices
 from fitcheck.models.results import PlanReport, TrainingConfig
 from fitcheck.solver import RECOMMENDED_HEADROOM_PCT
 
@@ -42,6 +43,7 @@ def _render_all(console: Console, report: PlanReport) -> None:
     _render_vram_breakdown(console, report)
     _render_recommended_config(console, report)
     _render_aggressive_config(console, report)
+    _render_cloud_pricing(console, report)
     _render_risks(console, report)
     _render_fallbacks(console, report)
 
@@ -223,6 +225,21 @@ def _render_aggressive_config(console: Console, report: PlanReport) -> None:
         Text("  Tighter fit -- may OOM on longer sequences", style="dim yellow"),
     )
     _render_config_table(console, agg)
+    console.print()
+
+
+def _render_cloud_pricing(console: Console, report: PlanReport) -> None:
+    """Show cloud GPU hourly rates as a cost reference."""
+    prices = get_cloud_prices()
+    if not prices:
+        return
+
+    console.print(Text("Cloud Equivalent", style="bold"))
+    parts = [f"{name} ${rate:.2f}/hr" for name, rate in prices.items()]
+    console.print(Text(f"  {', '.join(parts)}", style="dim"))
+    console.print(
+        Text("  Approximate cheapest spot rates. Prices fluctuate.", style="dim italic"),
+    )
     console.print()
 
 

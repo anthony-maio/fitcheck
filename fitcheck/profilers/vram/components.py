@@ -29,6 +29,9 @@ def _bytes_per_param(dtype: str) -> float:
     return _DTYPE_BYTES[key]
 
 
+_MLP_MODULES = {"gate_proj", "up_proj", "down_proj", "w1", "w2", "w3"}
+
+
 def count_lora_params(
     model: ModelProfile,
     lora_config: LoRAConfig,
@@ -38,19 +41,27 @@ def count_lora_params(
     For each target module in each layer:
         A matrix: (in_features, rank) = in_features * rank
         B matrix: (rank, out_features) = rank * out_features
+
+    For MoE models, MLP modules (gate_proj, up_proj, down_proj) exist
+    per-expert.  LoRA applied to these targets trains adapters on ALL
+    experts, so MLP adapter params scale with num_experts.
     """
     rank = lora_config.rank
-    total = 0
 
-    # Map target module names to their dimensions for the given architecture
-    module_dims = _get_module_dimensions(model, lora_config.target_modules)
+    # Split targets into attention (shared) and MLP (per-expert in MoE)
+    attn_targets = [t for t in lora_config.target_modules if t not in _MLP_MODULES]
+    mlp_targets = [t for t in lora_config.target_modules if t in _MLP_MODULES]
 
-    for in_feat, out_feat in module_dims:
-        # A: in_features x rank, B: rank x out_features
-        total += (in_feat * rank) + (rank * out_feat)
+    attn_dims = _get_module_dimensions(model, attn_targets)
+    mlp_dims = _get_module_dimensions(model, mlp_targets)
 
-    # Multiply by number of layers
-    return total * model.num_layers
+    per_layer_attn = sum((in_f * rank) + (rank * out_f) for in_f, out_f in attn_dims)
+    per_layer_mlp = sum((in_f * rank) + (rank * out_f) for in_f, out_f in mlp_dims)
+
+    # MoE: MLP adapters exist per expert
+    num_experts = model.num_experts if model.is_moe else 1
+
+    return (per_layer_attn + per_layer_mlp * num_experts) * model.num_layers
 
 
 def _get_module_dimensions(
@@ -134,6 +145,12 @@ def weight_memory(
 
     else:
         raise ValueError(f"Unknown method: {method}")
+
+    if model.is_moe:
+        desc += (
+            f" (MoE: all {model.num_experts} experts on GPU, "
+            f"~{model.active_params / 1e9:.1f}B active per forward pass)"
+        )
 
     return ComponentEstimate(name="Model weights", bytes=total_bytes, description=desc)
 
